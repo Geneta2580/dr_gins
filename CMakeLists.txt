@@ -43,6 +43,7 @@ add_library(dr_gins_core
   common/dr_gins_interface.cpp
   core/gins_eskf.cpp
   core/ins.cpp
+  log/state_logger.cpp
 )
 
 target_link_libraries(dr_gins_core

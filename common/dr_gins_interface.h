@@ -13,6 +13,7 @@
 #include "common/types.h"
 #include "common/file_io.h"
 #include "core/gins_eskf.h"
+#include "log/state_logger.h"
 
 // 前向声明核心ESKF求解器类。
 namespace dr_gins {
@@ -82,6 +83,9 @@ private:
 
     // ESKF求解器实例
     std::unique_ptr<ESKF> eskf_solver_;
+
+    // 状态日志记录器
+    std::unique_ptr<StateLogger> state_logger_;
 
     bool align_yaw_ = false; // 初始状态为未对齐
     std::mutex data_mutex_;

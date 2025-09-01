@@ -7,6 +7,9 @@ DrGinsInterface::DrGinsInterface(ros::NodeHandle& nh, ros::NodeHandle& private_n
     // 创建ESKF求解器的实例
     eskf_solver_ = std::make_unique<ESKF>();
 
+    // 日志
+    state_logger_ = std::make_unique<StateLogger>();
+
     // 初始化ROS相关的订阅者和发布者
     InitRos();
 
@@ -145,6 +148,11 @@ void DrGinsInterface::ReplayFromFile() {
             if constexpr (std::is_same_v<T, IMU>) {
                 if (eskf_solver_->ProcessImu(ProcessIMUTimestamp(arg))) {
                     PublishState();
+
+                    if (state_logger_ && !eskf_solver_->IsHistoryEmpty()) {
+                        state_logger_->LogState(eskf_solver_->GetLatestHistoryState());
+                    }
+
                 }
             } else if constexpr (std::is_same_v<T, GNSS>) {
                 eskf_solver_->ProcessGnss(arg);

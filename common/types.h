@@ -54,6 +54,14 @@ struct TruePose {
     Vector3d p = Vector3d::Zero();         // 位置 (通常在某个局部坐标系下)
 };
 
+// 历史状态
+struct HistoryState {
+    double timestamp;
+    NavState state;
+    Matrix<double, 18, 18> P = Eigen::Matrix<double, 18, 18>::Zero();
+    IMU imu_data;
+};
+
 // 使用std::variant来封装不同类型的传感器数据
 using SensorData = std::variant<IMU, GNSS, TruePose>;
 

@@ -8,15 +8,6 @@
 
 namespace dr_gins {
 
-// 历史状态
-struct HistoryState {
-    double timestamp;
-    NavState state;
-    Matrix<double, 18, 18> P = Eigen::Matrix<double, 18, 18>::Zero();
-    IMU imu_data;
-};
-
-
 class ESKF {
 public:
     ESKF() = default;
@@ -36,6 +27,15 @@ public:
     // 获取当前导航状态
     NavState GetNavState() const;
 
+    // 获取最新的历史状态
+    const HistoryState& GetLatestHistoryState() const {
+        return history_buffer_.back();
+    }
+
+    // 检查历史状态是否为空
+    bool IsHistoryEmpty() const {
+        return history_buffer_.empty();
+    }
 private:
 
     // 传播误差状态协方差矩阵
