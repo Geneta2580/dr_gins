@@ -33,7 +33,6 @@ accel_noise: 0.00000841                   # per-axis accel noise (used to form 3
 gnss_noise: [1.2, 1.2, 1.2,        # GNSS measurement position noise (east,north,up) m
              2.0, 2.0, 2.0]        # GNSS measurement velocity noise (east,north,up) m/s
 
-# Publishing
 publish:
   odom_topic: "/dr_gins/odometry"
   path_topic: "/dr_gins/path"
