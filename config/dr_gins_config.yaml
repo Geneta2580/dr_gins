@@ -1,0 +1,42 @@
+# Parameters for DrGinsInterface and ESKF initialization
+
+# Frame ids
+base_frame_id: "map"
+child_frame_id: "base_link"
+
+# Data source
+use_file_data: false                # true = replay from file, false = subscribe to ROS topics
+data_file_path: "/home/geneta/project/dr_gins_ws/src/dr_gins/data/527-8.csv" # imu_pose.txt用于测试
+
+# # Replay behavior (only used when use_file_data = true)
+# replay:
+#   simulate_realtime: true          # if true, ReplayFromFile will sleep between samples
+#   speedup: 1.0                     # >1.0 speeds up replay (dt /= speedup)
+
+# Topics (used when not using file data)
+imu_topic: "/dvs/imu"
+gnss_topic: "/ublox/navpvt"
+
+# Initial nominal state (can be overridden by params)
+initial_state:
+  position: [0, 0, 0]        # ENU or local frame origin (m)
+  velocity: [-0.135601121298, 1.577992061167, 0.005000368718]        # m/s
+  orientation_wxyz: [0.99875, 0.0499792, 0, 0]  # quaternion w,x,y,z
+  accel_bias: [0.15696, 0.15696, 0.15696]      # m/s^2
+  gyro_bias: [0.4, 0.4, 0.4]       # rad/s
+  gravity: [0.0, 0.0, -9.80191]       # m/s^2
+
+# Covariance / noise settings
+initial_cov_scale: 1.00            # scalar to scale identity for initial P (18x18)
+gyro_noise: 0.000006505                 # per-axis gyro noise (used to form 3x3 diag) 假设每个轴的噪声相同 (rad/s)² / Hz
+accel_noise: 0.00000841                   # per-axis accel noise (used to form 3x3 diag)   (m/s²)² / Hz
+gnss_noise: [1.2, 1.2, 1.2,        # GNSS measurement position noise (east,north,up) m
+             2.0, 2.0, 2.0]        # GNSS measurement velocity noise (east,north,up) m/s
+
+# Publishing
+publish:
+  odom_topic: "/dr_gins/odometry"
+  path_topic: "/dr_gins/path"
+  truth_odom_topic: "/dr_gins/truth_odometry"    # 新增
+  truth_path_topic: "/dr_gins/truth_path"        # 新增
+  path_buffer_size: 1000

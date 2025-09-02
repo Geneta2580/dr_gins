@@ -1,0 +1,5 @@
+<launch>
+    <node name="dr_gins_node" pkg="dr_gins" type="test_pipeline" output="screen">
+        <rosparam file="$(find dr_gins)/config/dr_gins_config.yaml" command="load" />
+    </node>
+</launch>
