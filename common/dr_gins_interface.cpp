@@ -68,13 +68,24 @@ void DrGinsInterface::InitParams() {
     if (private_nh_.getParam("initial_state/gravity", vec) && vec.size() >= 3)
         initial_state.g = Vector3d(vec[0], vec[1], vec[2]);
 
-    // 初始协方差缩放因子或完整矩阵
-    double p_scale = private_nh_.param("initial_cov_scale", 1e-3);
-    Matrix<double, 18, 18> P = Matrix<double, 18, 18>::Identity() * p_scale;
+    // 初始化协方差矩阵 P
+    Matrix<double, 18, 18> P = Matrix<double, 18, 18>::Zero();
+    double p_pos = private_nh_.param("initial_covariance/pos", 10.0);
+    double p_vel = private_nh_.param("initial_covariance/vel", 1.0);
+    double p_att = private_nh_.param("initial_covariance/att", 0.1);
+    double p_bg = private_nh_.param("initial_covariance/bg", 0.01);
+    double p_ba = private_nh_.param("initial_covariance/ba", 0.1);
+    double p_g = private_nh_.param("initial_covariance/g", 0.01);
+    P.block<3, 3>(0, 0) = Matrix3d::Identity() * p_pos;   // Position
+    P.block<3, 3>(3, 3) = Matrix3d::Identity() * p_vel;   // Velocity
+    P.block<3, 3>(6, 6) = Matrix3d::Identity() * p_att;   // Attitude (error state)
+    P.block<3, 3>(9, 9) = Matrix3d::Identity() * p_bg;    // Gyro bias
+    P.block<3, 3>(12, 12) = Matrix3d::Identity() * p_ba;  // Accel bias
+    P.block<3, 3>(15, 15) = Matrix3d::Identity() * p_g;   // Gravity
 
     // 传感器噪声（默认并可由参数覆盖）
-    Matrix3d gyro_noise = Matrix3d::Identity() * private_nh_.param("gyro_noise", 1e-3);
-    Matrix3d accel_noise = Matrix3d::Identity() * private_nh_.param("accel_noise", 1e-3);
+    Matrix3d gyro_noise = Matrix3d::Identity() * private_nh_.param("gyro_noise", 1e-3); // Q F传播噪声
+    Matrix3d accel_noise = Matrix3d::Identity() * private_nh_.param("accel_noise", 1e-3);// R 量测噪声
 
     std::vector<double> gnss_vec;
     Vector6d gnss_noise;
@@ -172,7 +183,7 @@ void DrGinsInterface::ReplayFromFile() {
 void DrGinsInterface::ImuCallback(const sensor_msgs::Imu::ConstPtr& imu_msg) {
     // 将ROS消息格式转换为内部数据结构
     IMU imu_data;
-    imu_data.timestamp = imu_msg->header.stamp.toSec();
+    imu_data.timestamp = ros::Time::now().toSec();  // 仿真时间 imu_msg->header.stamp.toSec();
     imu_data.gyro.x() = imu_msg->angular_velocity.x;
     imu_data.gyro.y() = imu_msg->angular_velocity.y;
     imu_data.gyro.z() = imu_msg->angular_velocity.z;
@@ -190,19 +201,25 @@ void DrGinsInterface::ImuCallback(const sensor_msgs::Imu::ConstPtr& imu_msg) {
     }
 }
 
-void DrGinsInterface::GnssCallback(const sensor_msgs::NavSatFix::ConstPtr& gnss_msg) {
+void DrGinsInterface::GnssCallback(const ublox_msgs::NavPVT::ConstPtr& gnss_msg) {
     // 将ROS消息格式转换为内部数据结构
     GNSS gnss_data;
-    gnss_data.timestamp = gnss_msg->header.stamp.toSec();
+    gnss_data.timestamp = ros::Time::now().toSec();  // 仿真时间 gnss_msg->header.stamp.toSec();
 
-    gnss_data.lla << gnss_msg->latitude,
-                     gnss_msg->longitude,
-                     gnss_msg->altitude;
+    // 从 NavPVT 消息中提取 LLA (经纬高)
+    // 纬度和经度单位为 1e-7 度，需要转换为浮点度
+    // 高度 hMSL (海平面高程) 单位为 mm，需要转换为 m
+    gnss_data.lla << static_cast<double>(gnss_msg->lat) * 1e-7,
+                     static_cast<double>(gnss_msg->lon) * 1e-7,
+                     static_cast<double>(gnss_msg->hMSL) * 1e-3;
     
-    gnss_data.velocity = Vector3d::Zero();
-
-    gnss_data.status = gnss_msg->status.status;
-    // gnss_data.horizontal_accuracy = ...; // 如果需要，可以从covariance中计算
+    // 从 NavPVT 消息中提取速度 (NED frame)
+    // 速度单位为 mm/s，需要转换为 m/s
+    gnss_data.velocity << static_cast<double>(gnss_msg->velN) * 1e-3,
+                          static_cast<double>(gnss_msg->velE) * 1e-3,
+                          static_cast<double>(gnss_msg->velD) * 1e-3;
+    
+    gnss_data.status = gnss_msg->fixType;
 
     // 调用ESKF核心进行处理
     eskf_solver_->ProcessGnss(gnss_data);

@@ -9,6 +9,7 @@
 #include <tf2/LinearMath/Quaternion.h>
 #include <tf2_geometry_msgs/tf2_geometry_msgs.h>
 #include <algorithm>
+#include <ublox_msgs/NavPVT.h>
 #include <memory>
 #include "common/types.h"
 #include "common/file_io.h"
@@ -37,7 +38,7 @@ private:
 
     void ImuCallback(const sensor_msgs::Imu::ConstPtr& imu_msg);
 
-    void GnssCallback(const sensor_msgs::NavSatFix::ConstPtr& gnss_msg);
+    void GnssCallback(const ublox_msgs::NavPVT::ConstPtr& gnss_msg);
 
     void InitRos();
 
