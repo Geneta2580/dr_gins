@@ -10,6 +10,8 @@
 namespace dr_gins {
 
 // Eigen 类型别名，简化使用
+using Vector2d = Eigen::Vector2d;
+using Matrix2d = Eigen::Matrix2d;
 using Vector3d = Eigen::Vector3d;
 using Matrix3d = Eigen::Matrix3d;
 using Vector4d = Eigen::Vector4d;
@@ -20,6 +22,7 @@ using Vector6d = Eigen::Matrix<double, 6, 1>;
 using Quaterniond = Eigen::Quaterniond;
 template<typename Scalar, int Rows, int Cols>
 using Matrix = Eigen::Matrix<Scalar, Rows, Cols>;
+using AngleAxisd = Eigen::AngleAxisd;
 
 // IMU数据结构
 struct IMU {

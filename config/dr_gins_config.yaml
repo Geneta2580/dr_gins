@@ -26,8 +26,8 @@ publish:
 # Initial nominal state
 initial_state:
   position: [0, 0, 0]        # ENU or local frame origin (m)
-  velocity: [-0.135601121298, 1.577992061167, 0.005000368718]        # m/s
-  orientation_wxyz: [0.99875, 0.0499792, 0, 0]  # quaternion w,x,y,z
+  velocity: [-0.135601121298, 1.577992061167, 0.005000368718]        # m/s 伪初始状态，真初始状态由GNSS给出
+  orientation_wxyz: [1, 0, 0, 0]  # quaternion w,x,y,z 伪初始状态，真初始状态由航向对齐结果给出
   accel_bias: [0.15696, 0.15696, 0.15696]      # m/s^2
   gyro_bias: [0.0069, 0.0069, 0.0069]       # rad/s
   gravity: [0.0, 0.0, -9.80191]       # m/s^2

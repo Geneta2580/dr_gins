@@ -10,6 +10,7 @@ bool ESKF::Initialize(const NavState& initial_state, const Matrix<double, 18, 18
     HistoryState initial_history;
     initial_history.timestamp = initial_state.timestamp;
     initial_history.state = initial_state;
+    initial_p_ = initial_p; 
     initial_history.P = initial_p;
     initial_history.imu_data = IMU(); 
     history_buffer_.push_back(initial_history);
@@ -55,7 +56,7 @@ bool ESKF::ProcessImu(const IMU& imu_data) {
     // 查找GNSS数据
     AttemptGnssUpdate();
 
-    return true;
+    return yaw_aligned_;
 }
 
 bool ESKF::ProcessGnss(const GNSS& gnss_data) {
@@ -96,7 +97,10 @@ void ESKF::AttemptGnssUpdate() {
 
         if(!yaw_aligned_) {
             // 对齐航向
-            if (AlignYawWithImu(state_at_gnss, gnss_data)) { return; }
+            if (AlignYawWithImu(state_at_gnss, gnss_data)) {
+                gnss_buffer_.clear();
+                return; 
+            }
         } else {
             // 已经对齐，进行GNSS更新和重传播
             UpdateAndRepropagate(iter_k, gnss_data, state_at_gnss);
@@ -208,73 +212,99 @@ bool ESKF::AlignYawWithImu(const HistoryState& state_at_gnss, const GNSS& gnss_d
     align_gnss_buffer_.push_back(gnss_data);
     align_state_buffer_.push_back(state_at_gnss);
 
-    const size_t required_data_points = 15;
-    if (align_gnss_buffer_.size() < required_data_points) {
+    if (align_gnss_buffer_.size() < required_data_points_) {
         return false; // 数据不足，等待下一次调用
     }
 
     ROS_INFO("Collected enough data (%zu points), attempting alignment.", align_gnss_buffer_.size());
 
-    // 使用GNSS速度计算加速度
-    std::vector<Vector3d> acc_n_vec;
-    std::vector<Vector3d> f_b_vec;
+    // 存储用于对齐的向量对
+    std::vector<Vector3d> gnss_vecs;
+    std::vector<Vector3d> imu_vecs_in_initial_frame;
 
     // 从第二个点开始，到倒数第二个点结束，进行中心差分
     for (size_t i = 1; i < align_gnss_buffer_.size() - 1; ++i) {
         const auto& prev_gnss = align_gnss_buffer_[i - 1];
         const auto& next_gnss = align_gnss_buffer_[i + 1];
-
         double dt = next_gnss.timestamp - prev_gnss.timestamp;
         if (dt <= 1e-3) continue;
-
-        // 直接对GNSS速度进行中心差分得到加速度
-        // 假设GNSS速度是在ENU坐标系下
+        
         Vector3d acc_n = (next_gnss.velocity - prev_gnss.velocity) / dt;
-
-        if (acc_n.norm() > 5.0 || acc_n.norm() < 0.1) continue;
-
-        // 存储 a_n 和与之对应的 f_b (比力)
-        acc_n_vec.push_back(acc_n);
-        f_b_vec.push_back(align_state_buffer_[i].imu_data.accel);
+        if (acc_n.norm() < 0.1 || acc_n.norm() > 5.0) continue;
+        
+        const auto& state_i = align_state_buffer_[i];
+        const Vector3d& f_b = state_i.imu_data.accel;
+        const Quaterniond& q_I_B = state_i.state.q;
+        Vector3d f_I = q_I_B * f_b;
+        
+        gnss_vecs.push_back(acc_n);
+        imu_vecs_in_initial_frame.push_back(f_I);
     }
 
-    if (acc_n_vec.size() < 5) {
-        ROS_WARN("Could not compute enough valid accelerations from GNSS for alignment. Clearing alignment buffer.");
-        align_gnss_buffer_.clear();
-        align_state_buffer_.clear();
+    if (gnss_vecs.size() < 8) {
+        ROS_WARN("Not enough valid dynamics in window (%zu points) to align.", gnss_vecs.size());
         return false;
     }
 
-    // 构建Wahba问题并求解 R_n_b
-    Vector3d g_n = align_state_buffer_[0].state.g;
+    // 使用SVD求解两个坐标系之间的旋转矩阵 R_N_I
     Matrix3d M = Matrix3d::Zero();
-    for (size_t i = 0; i < acc_n_vec.size(); ++i) {
-        M += (acc_n_vec[i] - g_n) * f_b_vec[i].transpose();
+    for (size_t i = 0; i < gnss_vecs.size(); ++i) {
+        M += gnss_vecs[i] * imu_vecs_in_initial_frame[i].transpose();
     }
 
-    Eigen::JacobiSVD<Matrix3d> svd(M, Eigen::ComputeFullU | Eigen::ComputeFullV);
+    Eigen::JacobiSVD<Eigen::Matrix3d> svd(M, Eigen::ComputeFullU | Eigen::ComputeFullV);
     Matrix3d U = svd.matrixU(), V = svd.matrixV();
     Matrix3d S = Matrix3d::Identity();
-    if (U.determinant() * V.determinant() < 0) S(2, 2) = -1.0;
-    Matrix3d R_n_b = U * S * V.transpose();
+    if (U.determinant() * V.determinant() < 0) {
+        S(2, 2) = -1.0;
+    }
+    Matrix3d R_N_I = U * S * V.transpose();
 
-    // 对齐成功，修正最新的历史状态
-    HistoryState& latest_state = history_buffer_.back();
-    latest_state.state.q = Quaterniond(R_n_b);
-    latest_state.state.p = Earth::LlaToEnu(align_gnss_buffer_.back().lla);
-    latest_state.state.v = align_gnss_buffer_.back().velocity;
-    latest_state.state.g = g_n;
-    latest_state.P = Matrix<double, 18, 18>::Identity() * 1.0; // 重置协方差矩阵
+    // 计算初始航向角 yaw0
+    double yaw0 = atan2(R_N_I(1, 0), R_N_I(0, 0));
+    ROS_INFO("Yaw Alignment Successful! Initial Yaw: %.2f degrees. ", yaw0 / D2R);
+
+    // 保存初始对齐状态和GNSS数据
+    const auto& latest_history_state = history_buffer_.back();
+    const auto& latest_gnss_data = align_gnss_buffer_.back();
+
+    // 提供给滤波器的初始状态帧
+    HistoryState new_initial_state;
+    new_initial_state.timestamp = latest_history_state.timestamp;
+    new_initial_state.imu_data = latest_history_state.imu_data;
+    new_initial_state.state.timestamp = latest_history_state.timestamp;
+    
+    // 修正姿态
+    Quaterniond q_N_I(R_N_I);
+    new_initial_state.state.q = q_N_I * latest_history_state.state.q;
+    new_initial_state.state.q.normalize();
+
+    Vector3d euler_angles1 = latest_history_state.state.q.toRotationMatrix().eulerAngles(2, 1, 0);
+    ROS_INFO("Test Yaw: %.2f degrees", euler_angles1[0] / D2R);
+
+    // 用最新的GNSS数据更新P, V
+    new_initial_state.state.p = Earth::LlaToEnu(latest_gnss_data.lla);
+    new_initial_state.state.v = latest_gnss_data.velocity;
+
+    // 继承历史状态部分数据
+    new_initial_state.state.g = latest_history_state.state.g;
+    new_initial_state.state.bg = latest_history_state.state.bg;
+    new_initial_state.state.ba = latest_history_state.state.ba;
+
+    // 使用指定的初始协方差
+    new_initial_state.P = initial_p_;
+
+    // 清空历史，将修正后的最新状态作为新的唯一初始帧
+    history_buffer_.clear();
+    history_buffer_.push_back(new_initial_state);
+
     yaw_aligned_ = true;
-
     align_gnss_buffer_.clear();
     align_state_buffer_.clear();
-    gnss_buffer_.clear();
-    history_buffer_.clear();
-    history_buffer_.push_back(latest_state);
-
-    Vector3d euler_angles = R_n_b.eulerAngles(2, 1, 0);
-    ROS_INFO("Yaw Alignment Successful! Initial Yaw: %.2f degrees", euler_angles[0] * 180.0 / M_PI);
+    
+    // 打印日志
+    Vector3d euler_angles = new_initial_state.state.q.toRotationMatrix().eulerAngles(2, 1, 0);
+    ROS_INFO("Repropagation complete. Initial Yaw: %.2f degrees", euler_angles[0] / D2R);
 
     return true;
 }

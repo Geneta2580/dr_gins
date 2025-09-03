@@ -66,10 +66,10 @@ private:
     std::list<HistoryState> history_buffer_;
     std::list<IMU> imu_buffer_for_align_;
     std::list<GNSS> gnss_buffer_;
-    const size_t max_history_size_ = 200;
+    const size_t max_history_size_ = 100000;
 
     // 需要足够的数据点来保证差分和SVD的稳定性
-    const size_t required_data_points = 15;
+    const size_t required_data_points_ = 6;
     std::vector<GNSS> align_gnss_buffer_;
     std::vector<HistoryState> align_state_buffer_;
 
@@ -80,6 +80,7 @@ private:
     // 噪声参数
     Matrix<double, 6, 6> imu_noise_cov_;  // 三轴加计、陀螺噪声
     Matrix<double, 6, 6> gnss_noise_cov_; // GNSS位置、速度噪声
+    Matrix<double, 18, 18> initial_p_; // 初始状态协方差矩阵
 
     double last_imu_timestamp_ = -1.0;
 
