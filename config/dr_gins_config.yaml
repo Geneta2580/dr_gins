@@ -4,7 +4,7 @@ base_frame_id: "map"
 child_frame_id: "base_link"
 
 # Data source
-use_file_data: false                # true = replay from file, false = subscribe to ROS topics
+use_file_data: true                # true = replay from file, false = subscribe to ROS topics
 data_file_path: "/home/geneta/project/dr_gins_ws/src/dr_gins/data/527-8.csv" # imu_pose.txt用于测试
 
 # # Replay behavior (only used when use_file_data = true)
@@ -13,7 +13,7 @@ data_file_path: "/home/geneta/project/dr_gins_ws/src/dr_gins/data/527-8.csv" # i
 #   speedup: 1.0                     # >1.0 speeds up replay (dt /= speedup)
 
 # Topics (used when not using file data)
-imu_topic: "/dvs/imu"
+imu_topic: "/handsfree/imu"
 gnss_topic: "/ublox/navpvt"
 
 publish:
@@ -21,7 +21,6 @@ publish:
   path_topic: "/dr_gins/path"
   truth_odom_topic: "/dr_gins/truth_odometry"    # 新增
   truth_path_topic: "/dr_gins/truth_path"        # 新增
-  path_buffer_size: 1000
 
 # Initial nominal state
 initial_state:
@@ -34,17 +33,22 @@ initial_state:
 
 # Initial covariance (P) settings
 initial_covariance:
-  pos: [10.0, 10.0, 10.0]          # 位置不确定性 (m^2)
-  vel: [1.0, 1.0, 1.0]             # 速度不确定性 ((m/s)^2)
-  att: [0.1, 0.1, 0.1]             # 姿态不确定性 (rad^2)
-  bg: [0.01, 0.01, 0.01]           # 陀螺仪零偏不确定性 ((rad/s)^2)
-  ba: [0.1, 0.1, 0.1]              # 加速度计零偏不确定性 ((m/s^2)^2)
-  g: [0.01, 0.01, 0.01]            # 重力不确定性 ((m/s^2)^2)
+  pos: [0.01, 0.01, 0.01]          # 位置不确定性 (m^2)
+  vel: [0.01, 0.01, 0.01]             # 速度不确定性 ((m/s)^2)
+  att: [0.0004, 0.0004, 0.0004]             # 姿态不确定性 (rad^2)
+  bg: [0.00001, 0.00001, 0.00001]           # 陀螺仪零偏不确定性 ((rad/s)^2)
+  ba: [0.001, 0.001, 0.001]              # 加速度计零偏不确定性 ((m/s^2)^2)
+  g: [0.0001, 0.0001, 0.0001]            # 重力不确定性 ((m/s^2)^2)
 
-# Q noise settings
-gyro_noise: 0.000006505                 # per-axis gyro noise (used to form 3x3 diag) 假设每个轴的噪声相同 (rad/s)² / Hz
-accel_noise: 0.00000841                   # per-axis accel noise (used to form 3x3 diag)   (m/s²)² / Hz
+# Qc noise settings
+gyro_noise: 2.1e-3                # per-axis gyro noise (used to form 3x3 diag) 假设每个轴的噪声相同 (rad/s)² / Hz
+gyro_bias_random_walk: 3.0e-6               # per-axis gyro random walk (used to form 3x3 diag) (rad/s)² / Hz
+accel_noise: 0.0                   # per-axis accel noise (used to form 3x3 diag)   (m/s²)² / Hz
+accel_bias_random_walk: 0.0               # per-axis accel random walk (used to form 3x3 diag) (m/s²)² / Hz
 
 # R noise settings
-gnss_noise: [1.2, 1.2, 1.2,        # GNSS measurement position noise (east,north,up) m
-             2.0, 2.0, 2.0]        # GNSS measurement velocity noise (east,north,up) m/s
+gnss_noise: [4.0, 4.0, 4.0,        # GNSS measurement position noise (east,north,up) m
+             1.0, 0.5, 0.5]        # GNSS measurement velocity noise (east,north,up) m/s
+
+# Max history state size
+max_history_size: 200
