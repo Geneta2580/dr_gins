@@ -92,6 +92,9 @@ private:
     std::mutex data_mutex_;
 
     double last_imu_timestamp_ = -1.0;
+
+    // 最大历史状态数量
+    int max_history_size_ = 200;
 };
 
 } // namespace dr_gins

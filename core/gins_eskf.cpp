@@ -2,9 +2,12 @@
 
 namespace dr_gins {
 
+ESKF::ESKF() : test_logger_(std::make_unique<StateLogger>()) {}
+
 bool ESKF::Initialize(const NavState& initial_state, const Matrix<double, 18, 18>& initial_p,
-                      const Matrix3d& gyro_noise, const Matrix3d& accel_noise,
-                      const Vector6d& gnss_noise) {
+                      const Matrix3d& gyro_noise, const Matrix3d& accel_noise, const Vector6d& gnss_noise, 
+                      const Matrix3d& gyro_bias_random_walk, const Matrix3d& accel_bias_random_walk,
+                      int max_history_size) {
 
     // 使用传入的参数创建第一个历史状态，并放入缓存
     HistoryState initial_history;
@@ -23,12 +26,20 @@ bool ESKF::Initialize(const NavState& initial_state, const Matrix<double, 18, 18
     // 设置GNSS噪声协方差矩阵
     gnss_noise_cov_ = gnss_noise.asDiagonal();
 
+    // 设置IMU随机游走噪声协方差矩阵
+    gyro_bias_random_walk_ = gyro_bias_random_walk;
+    accel_bias_random_walk_ = accel_bias_random_walk;
+
+    // 设置最大历史状态数量
+    max_history_size_ = max_history_size;
+
     first_imu_ = true; // 标记需要用第一帧IMU数据更新初始状态
     ROS_INFO("System Parameters Initialized Successfully!");
     return true;
 }
 
 bool ESKF::ProcessImu(const IMU& imu_data) {
+    std::cout << "running" << std::endl;
     // 第一帧IMU数据不进行状态传播，不发布
     if (first_imu_) {
         history_buffer_.front().imu_data = imu_data;
@@ -49,8 +60,17 @@ bool ESKF::ProcessImu(const IMU& imu_data) {
     history_buffer_.push_back(new_history);
 
     // 限制历史缓存大小
-    if (history_buffer_.size() >  max_history_size_) {
-        history_buffer_.pop_front();
+    if (yaw_aligned_) {
+        // 导航状态
+        if (history_buffer_.size() >  max_history_size_) {
+            history_buffer_.pop_front();
+        }
+    } else {
+        // 对齐状态
+        if (history_buffer_.size() > 3000) {
+            ROS_WARN_THROTTLE(5.0, "Alignment is taking too long, history buffer reached safety limit. Discarding oldest state.");
+            history_buffer_.pop_front();
+        }
     }
 
     // 查找GNSS数据
@@ -185,17 +205,28 @@ void ESKF::PropagateState(const HistoryState& last_history, const IMU& current_i
     F.block<3, 3>(6, 6) = Matrix3d::Identity() - SkewSymmetric(corrected_gyro) * dt; // corrected_gyro = imu.gyro - nominal_state_.bg
     F.block<3, 3>(6, 9) = -Matrix3d::Identity() * dt;
 
-    // Matrix<double, 15, 6> G = Matrix<double, 15, 6>::Zero();
-    // G.block<3, 3>(3, 3) = -R;
-    // G.block<3, 3>(6, 0) = -Matrix3d::Identity();
-    // G.block<3, 3>(9, 0) = Matrix3d::Identity(); // For gyro bias noise
-    // G.block<3, 3>(12, 3) = Matrix3d::Identity(); // For accel bias noise
-    // Matrix<double, 15, 15> Q = G * imu_noise_cov_ * G.transpose() * dt * dt;
+    // 输入噪声矩阵
+    Matrix<double, 12, 12> Q_c = Matrix<double, 12, 12>::Zero();
+    Q_c.block<6, 6>(0, 0) = imu_noise_cov_; // 陀螺仪和加速度计的测量噪声
+    Q_c.block<3, 3>(6, 6) = gyro_bias_random_walk_;  // 陀螺仪零偏的随机游走噪声
+    Q_c.block<3, 3>(9, 9) = accel_bias_random_walk_; // 加速度计零偏的随机游走噪声
 
-    // 噪声矩阵Q
-    // 参考高翔自动驾驶与机器人中的SLAM技术 第1版 P86
-    Matrix<double, 18, 18> Q = Matrix<double, 18, 18>::Zero();
-    Q.block<6, 6>(9, 9) = imu_noise_cov_;
+    // 计算过程噪声传播矩阵 G
+    Matrix<double, 18, 12> G = Matrix<double, 18, 12>::Zero();
+    G.block<3, 3>(6, 0) = -Matrix3d::Identity();
+    G.block<3, 3>(3, 3) = -R;
+    G.block<3, 3>(9, 6) = Matrix3d::Identity();
+    G.block<3, 3>(12, 9) = Matrix3d::Identity();
+
+    Matrix<double, 18, 18> Q = G * Q_c * G.transpose() * dt; 
+
+    test_logger_->LogTest(Q);
+    // std::cout << "Q: " << Q << std::endl;
+
+    // // 噪声矩阵Q
+    // // 参考高翔自动驾驶与机器人中的SLAM技术 第1版 P86
+    // Matrix<double, 18, 18> Q = Matrix<double, 18, 18>::Zero();
+    // Q.block<6, 6>(9, 9) = imu_noise_cov_;
 
     // 状态传播
     new_history.state = predicted_state;
@@ -230,7 +261,8 @@ bool ESKF::AlignYawWithImu(const HistoryState& state_at_gnss, const GNSS& gnss_d
         if (dt <= 1e-3) continue;
         
         Vector3d acc_n = (next_gnss.velocity - prev_gnss.velocity) / dt;
-        if (acc_n.norm() < 0.1 || acc_n.norm() > 5.0) continue;
+        // std::cout << "acc_n norm: " << acc_n.norm() << std::endl;
+        if (acc_n.norm() < 0.01) continue;
         
         const auto& state_i = align_state_buffer_[i];
         const Vector3d& f_b = state_i.imu_data.accel;
@@ -323,6 +355,7 @@ void ESKF::UpdateState(HistoryState& state_to_update, const Vector6d& residual, 
 
     // 更新协方差矩阵
     state_to_update.P = (Matrix<double, 18, 18>::Identity() - K * H) * state_to_update.P;
+    state_to_update.P = 0.5 * (state_to_update.P + state_to_update.P.transpose());
 
     // 更新状态
     state_to_update.state.p += delta_x.head<3>();

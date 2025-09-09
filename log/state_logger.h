@@ -15,10 +15,12 @@ public:
     ~StateLogger();
 
     void LogState(const HistoryState& history);
+    void LogTest(const Matrix<double, 18, 18>& test_value);
 
 private:
     std::ofstream state_file_;
     std::ofstream cov_file_;
+    std::ofstream test_file_;
 };
 
 } // namespace dr_gins

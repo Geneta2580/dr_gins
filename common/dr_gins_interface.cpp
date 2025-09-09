@@ -84,9 +84,13 @@ void DrGinsInterface::InitParams() {
     P.block<3, 3>(15, 15) = Matrix3d::Identity() * p_g;   // Gravity
 
     // 传感器噪声（默认并可由参数覆盖）
+    // IMU测量噪声
     Matrix3d gyro_noise = Matrix3d::Identity() * private_nh_.param("gyro_noise", 1e-3); // Q F传播噪声
     Matrix3d accel_noise = Matrix3d::Identity() * private_nh_.param("accel_noise", 1e-3);// R 量测噪声
+    Matrix3d gyro_random_walk = Matrix3d::Identity() * private_nh_.param("gyro_random_walk", 1e-3); // 陀螺随机游走
+    Matrix3d accel_random_walk = Matrix3d::Identity() * private_nh_.param("accel_random_walk", 1e-3); // 加计随机游走
 
+    // GNSS测量噪声
     std::vector<double> gnss_vec;
     Vector6d gnss_noise;
     if (private_nh_.getParam("gnss_noise", gnss_vec) && gnss_vec.size() >= 6)
@@ -94,8 +98,11 @@ void DrGinsInterface::InitParams() {
     else
         gnss_noise << 1.0, 1.0, 2.0, 0.1, 0.1, 0.1;
 
+    // 最大历史状态数量
+    private_nh_.param("max_history_size", max_history_size_, 200);
+
     // 调用ESKF初始化
-    eskf_solver_->Initialize(initial_state, P, gyro_noise, accel_noise, gnss_noise);
+    eskf_solver_->Initialize(initial_state, P, gyro_noise, accel_noise, gnss_noise, gyro_random_walk, accel_random_walk, max_history_size_);
 
     ROS_INFO("ESKF parameters initialized. use_file_data: %s, data_file_path: %s", 
              use_file_data_ ? "true" : "false", data_file_path_.c_str());
@@ -158,7 +165,7 @@ void DrGinsInterface::ReplayFromFile() {
         }
         // **************************************这部分可以写成一个开关**************************************
 
-        std::visit([this](auto&& arg) {
+        std::visit([this, i](auto&& arg) {
             using T = std::decay_t<decltype(arg)>;
             if constexpr (std::is_same_v<T, IMU>) {
                 if (eskf_solver_->ProcessImu(ProcessIMUTimestamp(arg))) {
@@ -183,7 +190,8 @@ void DrGinsInterface::ReplayFromFile() {
 void DrGinsInterface::ImuCallback(const sensor_msgs::Imu::ConstPtr& imu_msg) {
     // 将ROS消息格式转换为内部数据结构
     IMU imu_data;
-    imu_data.timestamp = ros::Time::now().toSec();  // 仿真时间 imu_msg->header.stamp.toSec();
+    imu_data.timestamp = imu_msg->header.stamp.toSec() - 1627998819.902226924;  // 转换为s 起始时间戳
+
     imu_data.gyro.x() = imu_msg->angular_velocity.x;
     imu_data.gyro.y() = imu_msg->angular_velocity.y;
     imu_data.gyro.z() = imu_msg->angular_velocity.z;
@@ -204,7 +212,7 @@ void DrGinsInterface::ImuCallback(const sensor_msgs::Imu::ConstPtr& imu_msg) {
 void DrGinsInterface::GnssCallback(const ublox_msgs::NavPVT::ConstPtr& gnss_msg) {
     // 将ROS消息格式转换为内部数据结构
     GNSS gnss_data;
-    gnss_data.timestamp = ros::Time::now().toSec();  // 仿真时间 gnss_msg->header.stamp.toSec();
+    gnss_data.timestamp = (gnss_msg->iTOW * 1e-3) - 222838;  // 转换为s，统一数据集起始时间 起始时间戳 222838000 单位ms
 
     // 从 NavPVT 消息中提取 LLA (经纬高)
     // 纬度和经度单位为 1e-7 度，需要转换为浮点度
@@ -217,7 +225,7 @@ void DrGinsInterface::GnssCallback(const ublox_msgs::NavPVT::ConstPtr& gnss_msg)
     // 速度单位为 mm/s，需要转换为 m/s
     gnss_data.velocity << static_cast<double>(gnss_msg->velN) * 1e-3,
                           static_cast<double>(gnss_msg->velE) * 1e-3,
-                          static_cast<double>(gnss_msg->velD) * 1e-3;
+                          -static_cast<double>(gnss_msg->velD) * 1e-3; // 变为U速度
     
     gnss_data.status = gnss_msg->fixType;
 
@@ -309,7 +317,7 @@ IMU DrGinsInterface::ProcessIMUTimestamp(const IMU& raw_imu) {
     } else {
         processed_imu.dt = 0.0; // 第一个IMU数据，dt设为0
     }
-    
+
     // 更新上一次时间戳
     last_imu_timestamp_ = raw_imu.timestamp;
     

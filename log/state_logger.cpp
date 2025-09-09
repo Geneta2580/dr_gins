@@ -12,6 +12,7 @@ StateLogger::StateLogger() {
     // --- 设置文件路径 ---
     std::string state_log_path = log_directory + "/filter_state.csv";
     std::string cov_log_path = log_directory + "/filter_covariance_diag.csv";
+    std::string test_log_path = log_directory + "/filter_test.csv";
 
     // 打开状态日志文件
     state_file_.open(state_log_path, std::ios::out);
@@ -30,6 +31,15 @@ StateLogger::StateLogger() {
         // 写入CSV文件头
         cov_file_ << "timestamp,P_px,P_py,P_pz,P_vx,P_vy,P_vz,P_roll,P_pitch,P_yaw,P_bgx,P_bgy,P_bgz,P_bax,P_bay,P_baz,P_gx,P_gy,P_gz" << std::endl;
     }
+
+    // 打开测试日志文件
+    test_file_.open(test_log_path, std::ios::out);
+    if (!test_file_.is_open()) {
+        std::cerr << "Error: Could not open test log file: " << test_log_path << std::endl;
+    } else {
+        // 写入CSV文件头
+        test_file_ << "test_value" << std::endl;
+    }
 }
 
 StateLogger::~StateLogger() {
@@ -40,6 +50,15 @@ StateLogger::~StateLogger() {
     if (cov_file_.is_open()) {
         cov_file_.close();
     }
+}
+
+void StateLogger::LogTest(const Matrix<double, 18, 18>& test_value) {
+    // 在写入前检查文件是否成功打开
+    if (!test_file_.is_open()) {
+        return;
+    }
+    // --- 记录测试值到CSV文件 ---
+    test_file_ << test_value << std::endl; // << std::fixed << std::setprecision(6)
 }
 
 void StateLogger::LogState(const HistoryState& history) {
