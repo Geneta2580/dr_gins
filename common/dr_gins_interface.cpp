@@ -157,12 +157,12 @@ void DrGinsInterface::ReplayFromFile() {
         const auto& data = all_data[i];
 
         // **************************************这部分可以写成一个开关**************************************
-        if (i > 0) {
-            double dt = GetTimestamp(data) - GetTimestamp(all_data[i-1]);
-            if (dt > 0.0 && dt < 1.0) { // 避免过大的时间跳跃
-                ros::Duration(dt).sleep(); // 在没有数据的dt期间进行等待，模拟数据接收的真实过程
-            }
-        }
+        // if (i > 0) {
+        //     double dt = GetTimestamp(data) - GetTimestamp(all_data[i-1]);
+        //     if (dt > 0.0 && dt < 1.0) { // 避免过大的时间跳跃
+        //         ros::Duration(dt).sleep(); // 在没有数据的dt期间进行等待，模拟数据接收的真实过程
+        //     }
+        // }
         // **************************************这部分可以写成一个开关**************************************
 
         std::visit([this, i](auto&& arg) {
@@ -206,6 +206,10 @@ void DrGinsInterface::ImuCallback(const sensor_msgs::Imu::ConstPtr& imu_msg) {
         if (state_logger_ && !eskf_solver_->IsHistoryEmpty()) {
             state_logger_->LogState(eskf_solver_->GetLatestHistoryState());
         }
+        // auto start = std::chrono::high_resolution_clock::now();
+        // auto end = std::chrono::high_resolution_clock::now();
+        // auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end - start);
+        // ROS_INFO("IMU callback processing time: %ld microseconds", duration.count());
     }
 }
 

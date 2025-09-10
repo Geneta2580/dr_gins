@@ -4,7 +4,7 @@ base_frame_id: "map"
 child_frame_id: "base_link"
 
 # Data source
-use_file_data: true                # true = replay from file, false = subscribe to ROS topics
+use_file_data: false                # true = replay from file, false = subscribe to ROS topics
 data_file_path: "/home/geneta/project/dr_gins_ws/src/dr_gins/data/527-8.csv" # imu_pose.txt用于测试
 
 # # Replay behavior (only used when use_file_data = true)
@@ -43,8 +43,8 @@ initial_covariance:
 # Qc noise settings
 gyro_noise: 2.1e-3                # per-axis gyro noise (used to form 3x3 diag) 假设每个轴的噪声相同 (rad/s)² / Hz
 gyro_bias_random_walk: 3.0e-6               # per-axis gyro random walk (used to form 3x3 diag) (rad/s)² / Hz
-accel_noise: 0.0                   # per-axis accel noise (used to form 3x3 diag)   (m/s²)² / Hz
-accel_bias_random_walk: 0.0               # per-axis accel random walk (used to form 3x3 diag) (m/s²)² / Hz
+accel_noise: 2.0e-4                   # per-axis accel noise (used to form 3x3 diag)   (m/s²)² / Hz
+accel_bias_random_walk: 3.0e-8               # per-axis accel random walk (used to form 3x3 diag) (m/s²)² / Hz
 
 # R noise settings
 gnss_noise: [4.0, 4.0, 4.0,        # GNSS measurement position noise (east,north,up) m

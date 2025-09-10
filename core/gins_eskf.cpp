@@ -39,7 +39,6 @@ bool ESKF::Initialize(const NavState& initial_state, const Matrix<double, 18, 18
 }
 
 bool ESKF::ProcessImu(const IMU& imu_data) {
-    std::cout << "running" << std::endl;
     // 第一帧IMU数据不进行状态传播，不发布
     if (first_imu_) {
         history_buffer_.front().imu_data = imu_data;
@@ -169,16 +168,16 @@ void ESKF::UpdateAndRepropagate(const std::list<HistoryState>::iterator& iter_k,
     UpdateState(state_at_gnss, residual, gnss_noise_cov_);
 
     // 从GNSS时刻重播到当前（迭代所有GNSS时刻到当前时刻的历史帧）
-    HistoryState replay_state = state_at_gnss;
-    for (auto it = iter_k1; it != history_buffer_.end(); ++it) {
-        HistoryState temp_state;
+    auto iter_current = iter_k1;
+    HistoryState last_corrected_state = state_at_gnss;
+    while (iter_current != history_buffer_.end()) {
+        HistoryState corrected_state;
         // 使用上一个重播状态作为起点进行传播
-        PropagateState(replay_state, it->imu_data, temp_state);
-        replay_state = temp_state;
+        PropagateState(last_corrected_state, iter_current->imu_data, corrected_state);
+        *iter_current = corrected_state;
+        last_corrected_state = corrected_state;
+        ++iter_current;
     }
-
-    // 更新历史缓存的最后一个状态
-    history_buffer_.back() = replay_state;
 
     // ROS_INFO("GNSS data at %.4f processed with replay.", gnss_data.timestamp);
 }
@@ -220,11 +219,11 @@ void ESKF::PropagateState(const HistoryState& last_history, const IMU& current_i
 
     Matrix<double, 18, 18> Q = G * Q_c * G.transpose() * dt; 
 
-    test_logger_->LogTest(Q);
+    // test_logger_->LogTest(Q);
     // std::cout << "Q: " << Q << std::endl;
 
-    // // 噪声矩阵Q
-    // // 参考高翔自动驾驶与机器人中的SLAM技术 第1版 P86
+    // 噪声矩阵Q
+    // 参考高翔自动驾驶与机器人中的SLAM技术 第1版 P86
     // Matrix<double, 18, 18> Q = Matrix<double, 18, 18>::Zero();
     // Q.block<6, 6>(9, 9) = imu_noise_cov_;
 
